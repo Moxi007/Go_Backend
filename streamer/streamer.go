@@ -35,6 +35,12 @@ func Stream(c *gin.Context, filePath string) {
 
 	logger.Info("Serving file via sendfile (zero-copy)", "size", fileInfo.Size())
 
+	// 设置强缓存头
+    // public: 允许中间人(CDN/Nginx)缓存
+    // max-age: 缓存时间(秒)，这里设为 1 年，因为网盘文件通常不会变
+    // immutable: 告诉客户端文件内容永远不会变
+    c.Header("Cache-Control", "public, max-age=31536000, immutable")
+
 	// 3. 核心传输逻辑
 	// http.ServeFile 会自动处理：
 	// - Content-Type (MIME 类型)
