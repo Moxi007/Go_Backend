@@ -3,17 +3,20 @@ FROM golang:1.23.5-alpine3.21 AS builder
 
 WORKDIR /app
 
-# 设置 Go 代理（可选，国内环境建议开启）
+# 【优化1】取消注释并启用国内代理，确保构建速度和成功率
 # ENV GOPROXY=https://goproxy.cn,direct
 
-# 预下载依赖，利用 Docker 缓存层
 COPY go.mod go.sum ./
 RUN go mod download
 
-# 复制源码并编译
 COPY . .
+
+# 【优化2】新增此行：自动整理依赖
+# 自动下载代码中引用但 go.mod 缺失的库，防止构建报错
+RUN go mod tidy
+
 # -s -w 去除符号表和调试信息，减小二进制体积
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o pilipili_backend main.go
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o go_backend main.go
 
 # 第二阶段：运行阶段
 FROM alpine:3.21
@@ -24,11 +27,11 @@ WORKDIR /app
 RUN apk --no-cache add ca-certificates tzdata
 
 # 从构建阶段复制二进制文件
-COPY --from=builder /app/pilipili_backend .
+COPY --from=builder /app/go_backend .
 
 # 设置时区
 ENV TZ=Asia/Shanghai
 
 # 容器启动命令
-ENTRYPOINT ["./pilipili_backend"]
+ENTRYPOINT ["./go_backend"]
 CMD ["config.yaml"]
