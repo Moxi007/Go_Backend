@@ -1,22 +1,19 @@
-// Package config handles loading and managing the application's configuration settings
 package config
 
 import (
 	"github.com/spf13/viper"
+	"strings"
 )
 
-// Config holds all configuration values.
 type Config struct {
-	Encipher        string // Key used for encryption and obfuscation
-	StorageBasePath string // Prefix for storage paths, used to form full file paths
-	Port            int    // Server port
-	LogLevel        string // Log level (e.g., INFO, DEBUG, ERROR)
+	Encipher        string
+	StorageBasePath string
+	Port            int
+	LogLevel        string
 }
 
-// globalConfig stores the loaded configuration.
 var globalConfig Config
 
-// Initialize loads the configuration from the provided config file and initializes the logger.
 func Initialize(configFile string, loglevel string) error {
 	viper.SetConfigType("yaml")
 
@@ -39,27 +36,20 @@ func Initialize(configFile string, loglevel string) error {
 			LogLevel:        getLogLevel(loglevel),
 		}
 	}
-
 	return nil
 }
 
-// GetConfig returns the global configuration.
-func GetConfig() Config {
-	return globalConfig
+// GetConfig 返回指针
+func GetConfig() *Config {
+	return &globalConfig
 }
 
-// defaultLogLevel returns the default log level if no log level is specified.
 func defaultLogLevel(loglevel string) string {
-	if loglevel != "" {
-		return loglevel
-	}
-	return "info"
+	if loglevel != "" { return loglevel }
+	return "INFO"
 }
 
-// getLogLevel returns the log level from either the parameter or the config file.
 func getLogLevel(loglevel string) string {
-	if loglevel != "" {
-		return loglevel
-	}
-	return viper.GetString("LogLevel")
+	if loglevel != "" { return loglevel }
+	return strings.ToUpper(viper.GetString("LogLevel"))
 }
