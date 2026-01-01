@@ -1,6 +1,8 @@
 module Go_Backend
 
-go 1.19
+go 1.23.0
+
+toolchain go1.23.5
 
 require (
 	github.com/fatih/color v1.18.0
