@@ -1,89 +1,92 @@
 package streamer
 
 import (
-	"PiliPili_Backend/config"
-	"PiliPili_Backend/logger"
-	"errors"
-	"github.com/gin-gonic/gin"
+	"Go_Backend/config"
+	"Go_Backend/logger"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/json"
 	"net/http"
-	"path/filepath"
-	"strings"
 	"time"
+
+	"github.com/gin-gonic/gin"
 )
 
-// Remote 处理远程流请求，进行鉴权和路径解析
-func Remote(c *gin.Context) {
-	// 获取 URL 参数
+// HandleStreamRequest 处理流媒体请求入口
+func HandleStreamRequest(c *gin.Context) {
+	// 1. 获取 URL 参数
+	// path: 相对路径 (例如 "2023/Movie.mp4")
+	// signature: 包含过期时间等信息的加密串
+	pathFromUrl := c.Query("path")
 	signature := c.Query("signature")
-	rawPath := c.Query("path")
 
-	// 1. 签名鉴权
-	itemId, mediaId, expireAt, err := authenticate(c, signature)
-	if err != nil {
-		logger.Error("Authentication failed: %v", err)
-		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+	if pathFromUrl == "" || signature == "" {
+		c.String(http.StatusBadRequest, "Missing path or signature")
 		return
 	}
 
-	// 仅在 DEBUG 模式下打印详细鉴权信息
-	if config.GetConfig().LogLevel == "DEBUG" {
-		beijingTime := expireAt.In(time.FixedZone("CST", 8*3600))
-		logger.Debug(
-			"Auth success | Path: %s | ItemID: %s | MediaID: %s | Expire: %s",
-			rawPath, itemId, mediaId, beijingTime.Format("2006-01-02 15:04:05"),
-		)
-	}
-
-	// 2. 路径安全处理 (关键安全优化)
-	basePath := config.GetConfig().StorageBasePath
-	
-	// 清洗路径，解析 "." 和 ".."
-	cleanPath := filepath.Clean(rawPath)
-	
-	// 防御性编程：再次检查是否包含 ".."，防止清洗后仍有逃逸风险
-	if strings.Contains(cleanPath, "..") {
-		logger.Error("Potential directory traversal attack detected", "path", rawPath)
-		c.AbortWithStatus(http.StatusForbidden)
+	// 2. 验证签名 (直接在此处处理，无需 cipher 包)
+	if !verifySignature(signature, config.GlobalConfig.Encipher) {
+		logger.Error("Access Denied", "ip", c.ClientIP(), "reason", "Invalid Signature")
+		c.String(http.StatusForbidden, "Invalid or expired signature")
 		return
 	}
 
-	// 安全拼接绝对路径
-	fullFilePath := filepath.Join(basePath, cleanPath)
-
-	// 3. 调用优化后的流传输方法
-	Stream(c, fullFilePath)
+	// 3. 验证通过，移交推流逻辑
+	ServeFile(c, pathFromUrl)
 }
 
-// authenticate 验证签名并解密内容
-func authenticate(c *gin.Context, signature string) (itemId, mediaId string, expireAt time.Time, err error) {
-	sigInstance, initErr := GetSignatureInstance()
-	if initErr != nil {
-		logger.Error("Signature instance is not initialized", "error", initErr)
-		return "", "", time.Time{}, initErr
+// verifySignature 验证前端生成的签名 (对应前端 stream/signature.go 的逻辑)
+func verifySignature(signatureStr string, secret string) bool {
+	// A. 解码最外层的 Base64
+	payloadJson, err := base64.StdEncoding.DecodeString(signatureStr)
+	if err != nil {
+		return false
 	}
 
-	// 解密签名
-	data, decryptErr := sigInstance.Decrypt(signature)
-	if decryptErr != nil {
-		// 签名无效或解密失败
-		return "", "", time.Time{}, decryptErr
+	// B. 解析 JSON {"data": "...", "signature": "..."}
+	var payload map[string]string
+	if err := json.Unmarshal(payloadJson, &payload); err != nil {
+		return false
 	}
 
-	// 类型断言获取字段
-	itemIdValue, _ := data["itemId"].(string)
-	mediaIdValue, _ := data["mediaId"].(string)
-	expireAtValue, _ := data["expireAt"].(float64)
-
-	// 校验字段完整性
-	if itemIdValue == "" || mediaIdValue == "" {
-		return "", "", time.Time{}, errors.New("invalid signature payload")
+	dataB64, ok1 := payload["data"]
+	sigB64, ok2 := payload["signature"]
+	if !ok1 || !ok2 {
+		return false
 	}
 
-	// 校验过期时间
-	expireAt = time.Unix(int64(expireAtValue), 0)
-	if expireAt.Before(time.Now().UTC()) {
-		return "", "", time.Time{}, errors.New("signature has expired")
+	// C. 解码内部数据
+	dataBytes, err := base64.StdEncoding.DecodeString(dataB64)
+	if err != nil { return false }
+
+	sigBytes, err := base64.StdEncoding.DecodeString(sigB64)
+	if err != nil { return false }
+
+	// D. 验证 HMAC-SHA256 签名 (防篡改)
+	h := hmac.New(sha256.New, []byte(secret))
+	h.Write(dataBytes)
+	computedSig := h.Sum(nil)
+
+	if !hmac.Equal(sigBytes, computedSig) {
+		return false
 	}
 
-	return itemIdValue, mediaIdValue, expireAt, nil
+	// E. 验证过期时间 (防盗链)
+	var dataMap map[string]interface{}
+	if err := json.Unmarshal(dataBytes, &dataMap); err != nil {
+		return false
+	}
+
+	expireAtVal, ok := dataMap["expireAt"].(float64) // JSON数字默认为float64
+	if !ok {
+		return false
+	}
+
+	if time.Now().Unix() > int64(expireAtVal) {
+		return false // 已过期
+	}
+
+	return true
 }
