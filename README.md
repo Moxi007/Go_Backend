@@ -1,4 +1,4 @@
-<h1 align="center">PiliPili_Backend</h1>
+<h1 align="center">Go_Backend</h1>
 
 <p align="center">A program suite for separating the frontend and backend of Emby service playback.</p>
 
