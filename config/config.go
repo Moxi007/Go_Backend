@@ -1,63 +1,38 @@
 package config
 
 import (
+	"log"
+
 	"github.com/spf13/viper"
-	"strings"
 )
 
-// Config 保存所有配置值
+// Mount 定义挂载点结构
+type Mount struct {
+	Name string `mapstructure:"name"`
+	Path string `mapstructure:"path"`
+	Root string `mapstructure:"root"`
+}
+
+// Config 全局配置结构
 type Config struct {
-	Encipher        string // 加密密钥
-	StorageBasePath string // 本地存储基路径
-	Port            int    // 监听端口
-	LogLevel        string // 日志级别
+	LogLevel string
+	Encipher string
+	Mounts   []Mount `mapstructure:"Mounts"` // 多挂载点支持
+	Server   struct {
+		Port int
+	}
 }
 
-var globalConfig Config
+// 直接暴露全局变量，读取速度最快
+var GlobalConfig *Config
 
-// Initialize 从配置文件加载配置
-func Initialize(configFile string, loglevel string) error {
-	viper.SetConfigType("yaml")
-
-	if configFile != "" {
-		viper.SetConfigFile(configFile)
-	}
-
-	// 读取配置或使用默认值
+func LoadConfig(path string) {
+	viper.SetConfigFile(path)
 	if err := viper.ReadInConfig(); err != nil {
-		globalConfig = Config{
-			Encipher:        "",
-			StorageBasePath: "",
-			Port:            60002,
-			LogLevel:        defaultLogLevel(loglevel),
-		}
-	} else {
-		globalConfig = Config{
-			Encipher:        viper.GetString("Encipher"),
-			StorageBasePath: viper.GetString("StorageBasePath"),
-			Port:            viper.GetInt("Server.port"),
-			LogLevel:        getLogLevel(loglevel),
-		}
+		log.Fatalf("Error reading config file: %s", err)
 	}
-	return nil
-}
 
-// GetConfig 返回全局配置 (优化：返回指针)
-func GetConfig() *Config {
-	return &globalConfig
-}
-
-func defaultLogLevel(loglevel string) string {
-	if loglevel != "" {
-		return loglevel
+	if err := viper.Unmarshal(&GlobalConfig); err != nil {
+		log.Fatalf("Unable to decode into struct: %v", err)
 	}
-	return "INFO"
-}
-
-func getLogLevel(loglevel string) string {
-	if loglevel != "" {
-		return loglevel
-	}
-	// 统一转大写，规范化
-	return strings.ToUpper(viper.GetString("LogLevel"))
 }
