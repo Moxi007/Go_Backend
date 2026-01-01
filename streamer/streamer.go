@@ -7,12 +7,12 @@ import (
 	"os"
 )
 
-// Stream 直接使用 http.ServeFile 进行零拷贝传输
-// 标准库会自动处理 Range 头、Content-Type 和 Last-Modified
+// Stream 处理文件流传输
+// 优化：使用 http.ServeFile 代替手动读取，利用内核级零拷贝 (sendfile) 技术提升性能
 func Stream(c *gin.Context, filePath string) {
 	logger.Info("Starting file streaming", "filePath", filePath)
 
-	// 检查文件是否存在
+	// 1. 获取文件状态，检查文件是否存在
 	fileInfo, err := os.Stat(filePath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -20,12 +20,13 @@ func Stream(c *gin.Context, filePath string) {
 			c.AbortWithStatus(http.StatusNotFound)
 			return
 		}
+		// 其他错误（如权限不足）
 		logger.Error("Error accessing file", "error", err)
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
 
-	// 如果是目录，禁止访问
+	// 2. 安全检查：禁止直接访问目录
 	if fileInfo.IsDir() {
 		logger.Error("Path is a directory, denying access", "filePath", filePath)
 		c.AbortWithStatus(http.StatusForbidden)
@@ -34,7 +35,11 @@ func Stream(c *gin.Context, filePath string) {
 
 	logger.Info("Serving file via sendfile (zero-copy)", "size", fileInfo.Size())
 
-	// http.ServeFile 会处理 Range 请求、ETag、Last-Modified 等
-	// 并且在支持的系统上使用 sendfile 系统调用
+	// 3. 核心传输逻辑
+	// http.ServeFile 会自动处理：
+	// - Content-Type (MIME 类型)
+	// - Content-Length
+	// - Range (断点续传/多线程下载)
+	// - If-Modified-Since (缓存控制)
 	http.ServeFile(c.Writer, c.Request, filePath)
 }
