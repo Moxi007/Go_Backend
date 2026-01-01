@@ -2,20 +2,18 @@
 
 <p align="center">一个实现 Emby 服务播放前后端分离的后端程序套件。</p>
 
-![Commit Activity](https://img.shields.io/github/commit-activity/m/hsuyelin/PiliPili_Backend/main) ![Top Language](https://img.shields.io/github/languages/top/hsuyelin/PiliPili_Backend) ![Github License](https://img.shields.io/github/license/hsuyelin/PiliPili_Backend)
-
 [English Version](https://github.com/hsuyelin/PiliPili_Backend/blob/main/README.md)
 
 ## 简介
 
-1. 本项目是实现 Emby 媒体服务播放前后端分离的后端程序，需要与播放分离前端 [PiliPili Playback Frontend](https://github.com/hsuyelin/PiliPili_Frontend) 配套使用。
+1. 本项目是实现 Emby 媒体服务播放前后端分离的后端程序，需要与播放分离前端 [PiliPili Playback Frontend](https://github.com/Moxi007/PiliPili_Frontend) 配套使用。
 2. 本程序很大程度上基于 [YASS-Backend](https://github.com/FacMata/YASS-Backend)，并为了提高易用性和极致的传输性能进行了大幅重构和优化。
 
 ------
 
 ## 原理
 
-1. **流量劫持**：使用特定的 `nginx` 配置（参考 [nginx.conf](https://github.com/hsuyelin/PiliPili_Backend/blob/main/nginx/nginx.conf)）监听指定端口，接收来自前端重定向过来的播放链接。
+1. **流量劫持**：使用特定的 `nginx` 配置（参考 [nginx.conf](https://github.com/Moxi007/Go_Backend/blob/main/nginx/nginx.conf)）监听指定端口，接收来自前端重定向过来的播放链接。
 
 2. **参数解析**：程序从请求中解析出 `path`（文件相对路径）和 `signature`（加密签名）。
 
@@ -31,8 +29,6 @@
     - 利用操作系统的 `sendfile` 机制（通过 Go 标准库 `http.ServeFile` 实现）。
     - 数据直接从磁盘缓存（Page Cache）传输到网卡，**无需经过用户态内存拷贝**。
     - 自动处理 `Content-Range`（断点续传）、MIME 类型检测和缓存控制，极大降低 CPU 占用并跑满网络带宽。
-
-![sequenceDiagram](https://github.com/hsuyelin/PiliPili_Backend/blob/main/img/sequenceDiagram_CN.png)
 
 ------
 
@@ -69,6 +65,7 @@ StorageBasePath: "/mnt/anime/"
 Server:
   port: 60002  # 服务器监听的端口
 
+```
 ------
 
 ## How to Use
