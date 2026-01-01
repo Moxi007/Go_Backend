@@ -1,9 +1,11 @@
-module PiliPili_Backend
+module PiliPili_Frontend
 
 go 1.23
 
 require (
-	github.com/fatih/color v1.14.1
+	github.com/6tail/lunar-go v1.3.15
+	github.com/allegro/bigcache v1.2.1
+	github.com/fatih/color v1.18.0
 	github.com/gin-gonic/gin v1.10.0
 	github.com/spf13/viper v1.19.0
 )
@@ -46,7 +48,8 @@ require (
 	golang.org/x/crypto v0.23.0 // indirect
 	golang.org/x/exp v0.0.0-20230905200255-921286631fa9 // indirect
 	golang.org/x/net v0.25.0 // indirect
-	golang.org/x/sys v0.20.0 // indirect
+	golang.org/x/sync v0.19.0 // indirect
+	golang.org/x/sys v0.25.0 // indirect
 	golang.org/x/text v0.15.0 // indirect
 	google.golang.org/protobuf v1.34.1 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
