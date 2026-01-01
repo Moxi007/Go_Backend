@@ -2,8 +2,6 @@
 
 <p align="center">一个实现 Emby 服务播放前后端分离的后端程序套件。</p>
 
-[English Version](https://github.com/hsuyelin/PiliPili_Backend/blob/main/README.md)
-
 ## 简介
 
 1. 本项目是实现 Emby 媒体服务播放前后端分离的后端程序，需要与播放分离前端 [PiliPili Playback Frontend](https://github.com/Moxi007/PiliPili_Frontend) 配套使用。
@@ -68,95 +66,116 @@ Server:
 ```
 ------
 
-## How to Use
+## 如何使用
 
-### 1. Install Using Docker (Recommended)
+### 步骤 0: Nginx 配置 (前置条件)
 
-#### 1.1 Create a Docker Directory
+- 后端程序默认监听 60002 端口，建议配合 Nginx 使用 HTTPS 并进行反向代理。
+
+- 找到你的 Nginx 配置文件。
+
+- 添加如下配置，将访问 /stream 的流量转发给后端。
+
+ ```shell
+server {
+    listen 443 ssl;
+    server_name streamer.example.com; # 你的推流域名
+
+    # SSL 证书配置...
+    ssl_certificate /path/to/cert.pem;
+    ssl_certificate_key /path/to/key.pem;
+
+    # 核心转发配置
+    location /stream {
+        proxy_pass [http://127.0.0.1:60002](http://127.0.0.1:60002);
+        
+        # 传递真实 IP
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # 禁用缓冲，这对流媒体非常重要
+        proxy_buffering off;
+        proxy_request_buffering off;
+        
+        # 长连接设置
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+    }
+}
+```
+
+### 方式 1: Docker 安装 (推荐)
+
+#### 1.1 创建目录
 
 ```shell
 mkdir -p /data/docker/go_backend
 ```
 
-#### 1.2 Create Configuration Folder and File
+#### 1.2 创建配置文件
 
 ```shell
 cd /data/docker/go_backend
 mkdir -p config && cd config
 ```
 
-Copy [config.yaml](https://github.com/Moxi007/Go_Backend/edit/main/config.yaml) to the `config` folder and edit it as needed.
+将 config.yaml 复制到 config 文件夹中，并根据实际情况编辑（特别是 StorageBasePath 和 Encipher）。
 
-#### 1.3 Create docker-compose.yaml
+#### 1.3 创建 docker-compose.yaml
 
-Navigate back to the `/data/docker/pilipili_backend` directory, and copy [docker-compose.yml](https://github.com/Moxi007/Go_Backend/edit/main/docker/docker-compose.yml) to this directory.
+返回 /data/docker/go_backend 目录，创建 docker-compose.yml
 
-#### 1.4 Start the Container
+#### 1.4 启动容器
 
 ```shell
 docker-compose pull && docker-compose up -d
 ```
 
-### 2. Manual Installation
+### 方式 2: 手动编译安装
 
-#### 2.1 Install the Go Environment
-
-##### 2.1.1 Remove Existing Go Installation
-
-Forcefully remove any existing Go installation to ensure version compatibility.
+#### 2.1 安装 Go 环境
 
 ```shell
-rm -rf /usr/local/go
-```
+# 1. 下载 Go (请根据最新版本调整 URL)
+wget -q -O /tmp/go.tar.gz [https://go.dev/dl/go1.23.5.linux-amd64.tar.gz](https://go.dev/dl/go1.23.5.linux-amd64.tar.gz) 
 
-##### 2.1.2 Download and Install the Latest Version of Go
+# 2. 解压安装
+rm -rf /usr/local/go && tar -C /usr/local -xzf /tmp/go.tar.gz && rm /tmp/go.tar.gz
 
-```shell
-wget -q -O /tmp/go.tar.gz https://go.dev/dl/go1.23.5.linux-amd64.tar.gz && tar -C /usr/local -xzf /tmp/go.tar.gz && rm /tmp/go.tar.gz
-```
-
-##### 2.1.3 Add Go to the Environment Variables
-
-```shell
+# 3. 配置环境变量
 echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc && source ~/.bashrc
+
+# 4. 验证安装
+go version
 ```
 
-##### 2.1.4 Verify Installation
+##### 2.2 下载代码
 
 ```shell
-go version # If the output is "go version go1.23.5 linux/amd64," the installation was successful.
+git clone [https://github.com/Moxi007/Go_Backend.git](https://github.com/Moxi007/Go_Backend.git) /data/emby_backend
+cd /data/emby_backend
 ```
 
-#### 2.2 Clone the Backend Program to Local Machine
-
-For example, to clone it to the `/data/emby_backend` directory:
+##### 2.3 编译与配置
 
 ```shell
-git clone https://github.com/Moxi007/Go_Backend.git /data/emby_backend
+vi config.yaml
 ```
-
-#### 2.3 Enter the Backend Program Directory and Edit the Configuration File
-
-```yaml
-# Configuration for Go Backend
-
-# LogLevel defines the level of logging (e.g., INFO, DEBUG, ERROR)
-LogLevel: "INFO"
-
-# EncryptionKey is used for encryption and obfuscation of data.
-Encipher: "vPQC5LWCN2CW2opz"
-
-# StorageBasePath is the base directory where files are stored. This is a prefix for the storage paths.
-StorageBasePath: "/mnt/anime/"
-
-# Server configuration
-Server:
-  port: "60002"  # Port on which the server will listen
-```
-
-#### 2.4 Run the Program
+编译二进制文件（推荐使用 build 生成二进制文件，比 go run 启动更快且更稳定）：
 
 ```shell
-nohup go run main.go config.yaml > streamer.log 2>&1 &
+# -s -w 参数用于去除调试符号，减小体积
+go build -ldflags="-s -w" -o pilipili_backend main.go
 ```
 
+##### 2.4 运行程序
+
+```shell
+# 前台运行测试
+./pilipili_backend config.yaml
+
+# 后台运行 (使用 nohup)
+nohup ./pilipili_backend config.yaml > streamer.log 2>&1 &
+```
