@@ -1,10 +1,10 @@
 package main
 
 import (
-	"PiliPili_Backend/config"
-	"PiliPili_Backend/logger"
-	"PiliPili_Backend/middleware"
-	"PiliPili_Backend/streamer"
+	"Go_Backend/config"
+	"Go_Backend/logger"
+	"Go_Backend/middleware"
+	"Go_Backend/streamer"
 	"fmt"
 	"github.com/gin-gonic/gin"
 	"log"
