@@ -2,12 +2,16 @@ package main
 
 import (
 	"Go_Backend/config"
-	"Go_Backend/logger"  // 引用上面的 logger 包
+	"Go_Backend/logger"
 	"Go_Backend/streamer"
 	"fmt"
 	"os"
 
 	"github.com/gin-gonic/gin"
+
+	// ✅ 优化: 自动适配容器 CPU 配额，防止在 Docker 中发生 CPU 节流
+	// 需先运行: go get go.uber.org/automaxprocs
+	_ "go.uber.org/automaxprocs"
 )
 
 func main() {
@@ -19,21 +23,20 @@ func main() {
 	// 1. 加载配置
 	config.LoadConfig(os.Args[1])
 
-	// 2. ✅✅✅ [关键] 初始化日志系统 ✅✅✅
-	// 从配置中读取 LogLevel，如果没有配则默认 INFO
+	// 2. 初始化日志
 	logger.InitializeLogger(config.GlobalConfig.LogLevel)
 	
-	logger.Info("Backend starting...", "version", "2.0-Concurrent", "port", config.GlobalConfig.Server.Port)
+	logger.Info("Backend starting...", "version", "3.0-TTL-Optimized", "port", config.GlobalConfig.Server.Port)
 
 	// 3. 设置 Gin 模式
 	if config.GlobalConfig.LogLevel == "DEBUG" {
 		gin.SetMode(gin.DebugMode)
 	} else {
-		gin.SetMode(gin.ReleaseMode) // 生产模式，性能更好
+		gin.SetMode(gin.ReleaseMode)
 	}
 	
 	r := gin.New()
-	r.Use(gin.Recovery()) // 崩溃恢复
+	r.Use(gin.Recovery())
 
 	// 4. 注册路由
 	r.GET("/stream", streamer.HandleStreamRequest)
