@@ -14,9 +14,70 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// pathCache 缓存 "相对路径 -> 绝对路径" 的映射
-// 作用：加速后续的分片请求 (Chunk Requests)
-var pathCache sync.Map
+// ---------------------------------------------------------
+// ✅ 优化模块: 自定义 TTL 缓存
+// 解决问题: 替代 sync.Map + Sleep 模式，消除协程泄漏隐患
+// ---------------------------------------------------------
+
+type PathCacheItem struct {
+	FullPath  string
+	ExpiresAt int64
+}
+
+type TTLCache struct {
+	items sync.Map
+}
+
+// Store 存入缓存，固定 1 小时有效期
+func (c *TTLCache) Store(key, value string) {
+	c.items.Store(key, PathCacheItem{
+		FullPath:  value,
+		ExpiresAt: time.Now().Add(1 * time.Hour).Unix(),
+	})
+}
+
+// Load 读取缓存，懒惰删除过期项
+func (c *TTLCache) Load(key string) (string, bool) {
+	val, ok := c.items.Load(key)
+	if !ok {
+		return "", false
+	}
+	item := val.(PathCacheItem)
+	// 检查是否过期
+	if time.Now().Unix() > item.ExpiresAt {
+		c.items.Delete(key)
+		return "", false
+	}
+	return item.FullPath, true
+}
+
+// StartCleanup 启动单例守护协程，每 10 分钟清理一次所有过期项
+func (c *TTLCache) StartCleanup() {
+	go func() {
+		ticker := time.NewTicker(10 * time.Minute)
+		for range ticker.C {
+			now := time.Now().Unix()
+			c.items.Range(func(key, value interface{}) bool {
+				item := value.(PathCacheItem)
+				if now > item.ExpiresAt {
+					c.items.Delete(key)
+				}
+				return true
+			})
+		}
+	}()
+}
+
+// 全局缓存实例
+var pathCache = &TTLCache{}
+
+func init() {
+	pathCache.StartCleanup() // 程序启动时开启清理任务
+}
+
+// ---------------------------------------------------------
+// ✅ 核心逻辑: 并发搜索与打开
+// ---------------------------------------------------------
 
 // FileResult 封装搜索结果
 type FileResult struct {
@@ -25,28 +86,22 @@ type FileResult struct {
 }
 
 // openFileConcurrently 并发尝试打开文件
-// 优势：将 (Stat + Open) 合并为一次 Open 操作，减少 50% 的云盘交互耗时
+// 优势：将 (Stat + Open) 合并为一次 Open 操作，减少 50% 的云盘网络交互
 func openFileConcurrently(relativePath string) (*os.File, string, error) {
 	cleanRelPath := filepath.Clean(relativePath)
 
-	// ----------------------
 	// 1. 快速通道：查缓存
-	// ----------------------
-	if val, ok := pathCache.Load(cleanRelPath); ok {
-		cachedFullPath := val.(string)
+	if cachedFullPath, ok := pathCache.Load(cleanRelPath); ok {
 		// 尝试直接打开缓存的路径
 		f, err := os.Open(cachedFullPath)
 		if err == nil {
-			// logger.Debug("Cache hit", "path", cachedFullPath) // 调试可开启
 			return f, cachedFullPath, nil
 		}
-		// 如果打开失败（文件被删或移动），清除缓存，回退到搜索模式
-		pathCache.Delete(cleanRelPath)
+		// 打开失败说明文件可能被移动或删除，移除缓存
+		pathCache.items.Delete(cleanRelPath)
 	}
 
-	// ----------------------
 	// 2. 慢速通道：并发搜索
-	// ----------------------
 	cfg := config.GlobalConfig
 	if cfg == nil || len(cfg.Mounts) == 0 {
 		return nil, "", errors.New("no mounts configured")
@@ -76,7 +131,6 @@ func openFileConcurrently(relativePath string) (*os.File, string, error) {
 			fullPath := filepath.Join(m.Root, cleanRelPath)
 
 			// 🔥 核心优化：直接 Open，而不是先 Stat
-			// 如果成功，我们直接拿到了文件句柄，后续不用再 Open 了
 			file, err := os.Open(fullPath)
 			if err == nil {
 				// 尝试提交结果
@@ -105,18 +159,10 @@ func openFileConcurrently(relativePath string) (*os.File, string, error) {
 			return nil, "", errors.New("file not found in any mount")
 		}
 		
-		// 记录到日志 (仅首次搜索时)
 		logger.Info("File opened (Search)", "path", res.Path)
 
-		// 写入缓存，方便下次直接命中
+		// 写入 TTL 缓存
 		pathCache.Store(cleanRelPath, res.Path)
-		
-		// 简单的缓存过期策略（可选）：1小时后清理
-		// 避免长期运行内存占用过大，虽说存字符串也占不了多少
-		go func(k string) {
-			time.Sleep(1 * time.Hour)
-			pathCache.Delete(k)
-		}(cleanRelPath)
 
 		return res.File, res.Path, nil
 
@@ -127,7 +173,7 @@ func openFileConcurrently(relativePath string) (*os.File, string, error) {
 
 // ServeFile 优化后的推流入口
 func ServeFile(c *gin.Context, relativePath string) {
-	// 1. 获取已打开的文件句柄 (0-Copy 准备)
+	// 1. 获取已打开的文件句柄 (Zero-Copy 准备)
 	file, fullPath, err := openFileConcurrently(relativePath)
 	if err != nil {
 		logger.Error("File open failed", "err", err, "path", relativePath)
@@ -138,7 +184,7 @@ func ServeFile(c *gin.Context, relativePath string) {
 	defer file.Close()
 
 	// 2. 获取文件元数据 (用于 Content-Length 和 Last-Modified)
-	// 因为文件已经打开，f.Stat() 通常是内存操作，极快
+	// 因为文件已经打开，Stat() 通常是内存操作，极快
 	fileInfo, err := file.Stat()
 	if err != nil {
 		c.String(http.StatusInternalServerError, "File stat failed")
@@ -149,8 +195,6 @@ func ServeFile(c *gin.Context, relativePath string) {
 	c.Header("Cache-Control", "public, max-age=31536000, immutable")
 	
 	// 4. 使用 ServeContent 代替 ServeFile
-	// http.ServeContent 接受 io.ReadSeeker。
-	// 当传入 *os.File 时，Go 标准库底层仍会尝试优化 (如 sendfile 或高效 copy)
-	// 且它自动处理 Range 请求 (断点续传)
+	// 它接受 *os.File 并自动处理 Range 请求，同时利用底层系统调用优化传输
 	http.ServeContent(c.Writer, c.Request, filepath.Base(fullPath), fileInfo.ModTime(), file)
 }
