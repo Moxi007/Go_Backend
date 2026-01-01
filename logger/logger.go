@@ -2,134 +2,84 @@ package logger
 
 import (
 	"fmt"
-	"github.com/fatih/color"
+	"log"
+	"os"
 	"strings"
 	"sync"
-	"time"
 )
 
-// Log levels constants
+// 日志级别常量
 const (
-	WARN  = 0
 	DEBUG = iota
 	INFO
+	WARN
 	ERROR
 )
 
-// Logger struct to hold the current log level
 type Logger struct {
 	level int
+	mu    sync.Mutex
 }
 
-// Global logger instance (accessible across the app)
-var (
-	loggerInstance *Logger
-	once           sync.Once
-)
+var instance *Logger
+var once sync.Once
 
-// New creates or returns the global logger instance with the specified log level
-// It only initializes the logger once
-func New(level int) *Logger {
+// InitializeLogger 初始化日志系统
+func InitializeLogger(levelStr string) {
 	once.Do(func() {
-		loggerInstance = &Logger{level: level}
-		fmt.Printf("Logger initialized with level: %d\n", level)
+		lvl := INFO // 默认 INFO
+		switch strings.ToUpper(levelStr) {
+		case "DEBUG":
+			lvl = DEBUG
+		case "WARN":
+			lvl = WARN
+		case "ERROR":
+			lvl = ERROR
+		}
+
+		instance = &Logger{
+			level: lvl,
+		}
+		// 设置标准 log 的输出格式 (日期+时间)
+		log.SetFlags(log.Ldate | log.Ltime)
+		log.SetOutput(os.Stdout)
+		
+		fmt.Printf("Logger initialized with level: %s\n", strings.ToUpper(levelStr))
 	})
-	return loggerInstance
 }
 
-// log is an internal function to print messages with a specific log level and color
-func (l *Logger) log(level int, format string, args ...interface{}) {
-	if level < l.level {
+// 内部输出函数
+func (l *Logger) print(level int, prefix string, msg string, keysAndValues ...interface{}) {
+	if l == nil || level < l.level {
 		return
 	}
 
-	var colorFunc func(...interface{}) string
-	var levelStr string
-
-	switch level {
-	case WARN:
-		colorFunc = color.New(color.FgYellow).Sprint
-		levelStr = "[WARN]"
-	case INFO:
-		colorFunc = color.New(color.FgGreen).Sprint
-		levelStr = "[INFO]"
-	case DEBUG:
-		colorFunc = color.New(color.FgBlue).Sprint
-		levelStr = "[DEBUG]"
-	case ERROR:
-		colorFunc = color.New(color.FgRed).Sprint
-		levelStr = "[ERROR]"
-	default:
-		colorFunc = color.New(color.FgWhite).Sprint
-		levelStr = "[UNKNOWN]"
+	// 拼接键值对
+	var kvBuilder strings.Builder
+	for i := 0; i < len(keysAndValues); i += 2 {
+		if i+1 < len(keysAndValues) {
+			kvBuilder.WriteString(fmt.Sprintf(" %v=%v", keysAndValues[i], keysAndValues[i+1]))
+		}
 	}
 
-	timestamp := time.Now().Format("2006-01-02 15:04:05")
-	msg := fmt.Sprintf(format, args...)
-	fmt.Printf("%s %s %s\n", colorFunc(timestamp), colorFunc(levelStr), msg)
+	// 颜色控制 (可选，这里用简单的符号区分)
+	log.Printf("[%s] %s%s\n", prefix, msg, kvBuilder.String())
 }
 
-// InitializeLogger creates a global logger instance based on the provided log level.
-// This is an internal method, so it uses a lowercase name.
-func InitializeLogger(level string) {
-	if level == "" {
-		level = "INFO"
-	}
-	level = strings.ToUpper(level)
-
-	var logLevel int
-	switch level {
-	case "WARN":
-		logLevel = WARN
-	case "INFO":
-		logLevel = INFO
-	case "DEBUG":
-		logLevel = DEBUG
-	case "ERROR":
-		logLevel = ERROR
-	default:
-		logLevel = INFO
-	}
-
-	loggerInstance = New(logLevel)
-	loggerInstance.level = logLevel
-	loggerInstance.log(INFO, "Initialized logger with level: %d\n", logLevel)
+// Info 打印信息日志
+func Info(msg string, keysAndValues ...interface{}) {
+	if instance == nil { InitializeLogger("INFO") } // 防止未初始化崩溃
+	instance.print(INFO, "INFO", msg, keysAndValues...)
 }
 
-// SetDefaultLogger initializes the global logger with the default log level "WARN".
-// This is typically used when no specific log level is provided by the application configuration.
-func SetDefaultLogger() {
-	InitializeLogger("WARN")
+// Error 打印错误日志
+func Error(msg string, keysAndValues ...interface{}) {
+	if instance == nil { InitializeLogger("INFO") }
+	instance.print(ERROR, "ERRO", msg, keysAndValues...)
 }
 
-// Warn logs an info level message
-func Warn(format string, args ...interface{}) {
-	if loggerInstance == nil {
-		return
-	}
-	loggerInstance.log(WARN, format, args...)
-}
-
-// Info logs an info level message
-func Info(format string, args ...interface{}) {
-	if loggerInstance == nil {
-		return
-	}
-	loggerInstance.log(INFO, format, args...)
-}
-
-// Debug logs a debug level message
-func Debug(format string, args ...interface{}) {
-	if loggerInstance == nil {
-		return
-	}
-	loggerInstance.log(DEBUG, format, args...)
-}
-
-// Error logs an error level message
-func Error(format string, args ...interface{}) {
-	if loggerInstance == nil {
-		return
-	}
-	loggerInstance.log(ERROR, format, args...)
+// Debug 打印调试日志
+func Debug(msg string, keysAndValues ...interface{}) {
+	if instance == nil { InitializeLogger("INFO") }
+	instance.print(DEBUG, "DBUG", msg, keysAndValues...)
 }
