@@ -2,96 +2,47 @@ package main
 
 import (
 	"Go_Backend/config"
-	"Go_Backend/logger"
-	"Go_Backend/middleware"
+	"Go_Backend/logger"  // 引用上面的 logger 包
 	"Go_Backend/streamer"
 	"fmt"
-	"github.com/gin-gonic/gin"
-	"log"
 	"os"
-	"strconv"
+
+	"github.com/gin-gonic/gin"
 )
 
-func initializeConfig(configFile string) error {
-	logger.Info("Initializing config...")
-
-	err := config.Initialize(configFile, "")
-	if err != nil {
-		log.Printf("Error initializing config: %v", err)
-		return err
-	}
-
-	logger.Info("Configuration initialized successfully")
-
-	// 使用 config.GetConfig() (返回指针)
-	loglevel := config.GetConfig().LogLevel
-	logger.InitializeLogger(loglevel)
-
-	encipher := config.GetConfig().Encipher
-	if err := streamer.InitializeSignature(encipher); err != nil {
-		logger.Error("Failed to initialize Signature", "error", err)
-		return err
-	}
-	logger.Info("Signature initialized successfully")
-
-	return nil
-}
-
-func initializeGinEngine() *gin.Engine {
-	logger.Info("Initializing Gin engine...")
-
-	gin.SetMode(gin.ReleaseMode)
-	r := gin.Default()
-	r.Use(middleware.CorsMiddleware())
-	// 注册路由
-	r.GET("/stream", streamer.Remote)
-
-	logger.Info("Gin engine initialized successfully")
-	return r
-}
-
-func startServer(r *gin.Engine) error {
-	logger.Info("Starting the server...")
-
-	port := config.GetConfig().Port
-	if port == 0 {
-		port = 60002
-	}
-	err := r.Run("0.0.0.0:" + strconv.Itoa(port))
-	if err != nil {
-		logger.Error("Error starting server: %v", err)
-		return err
-	}
-
-	logger.Info("Server started successfully on port %d", port)
-	return nil
-}
-
-func handleRequest(configFile string) error {
-	logger.SetDefaultLogger()
-	logger.Info("\n-----------------------------------------------\n")
-	logger.Info("Start request handle.")
-
-	if err := initializeConfig(configFile); err != nil {
-		return err
-	}
-	r := initializeGinEngine()
-	if err := startServer(r); err != nil {
-		return err
-	}
-
-	return nil
-}
-
 func main() {
-	args := os.Args[1:]
-	if len(args) == 0 {
-		fmt.Println("Please provide the configuration file as an argument.")
+	if len(os.Args) < 2 {
+		fmt.Println("Usage: ./go_backend <config_file_path>")
 		return
 	}
-	configFile := args[0]
 
-	if err := handleRequest(configFile); err != nil {
-		log.Fatalf("Request handling failed: %v", err)
+	// 1. 加载配置
+	config.LoadConfig(os.Args[1])
+
+	// 2. ✅✅✅ [关键] 初始化日志系统 ✅✅✅
+	// 从配置中读取 LogLevel，如果没有配则默认 INFO
+	logger.InitializeLogger(config.GlobalConfig.LogLevel)
+	
+	logger.Info("Backend starting...", "version", "2.0-Concurrent", "port", config.GlobalConfig.Server.Port)
+
+	// 3. 设置 Gin 模式
+	if config.GlobalConfig.LogLevel == "DEBUG" {
+		gin.SetMode(gin.DebugMode)
+	} else {
+		gin.SetMode(gin.ReleaseMode) // 生产模式，性能更好
+	}
+	
+	r := gin.New()
+	r.Use(gin.Recovery()) // 崩溃恢复
+
+	// 4. 注册路由
+	r.GET("/stream", streamer.HandleStreamRequest)
+
+	// 5. 启动服务
+	addr := fmt.Sprintf(":%d", config.GlobalConfig.Server.Port)
+	logger.Info("Server listening", "address", addr)
+	
+	if err := r.Run(addr); err != nil {
+		logger.Error("Startup failed", "error", err)
 	}
 }
