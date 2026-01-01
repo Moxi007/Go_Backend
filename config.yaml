@@ -1,14 +1,25 @@
-# Configuration for PiliPili Backend
-
-# LogLevel defines the level of logging (e.g., INFO, DEBUG, ERROR)
+# Logging configuration
 LogLevel: "INFO"
-
-# EncryptionKey is used for encryption and obfuscation of data.
 Encipher: "vPQC5LWCN2CW2opz"
 
-# StorageBasePath is the base directory where files are stored. This is a prefix for the storage paths.
-StorageBasePath: "/mnt/anime/"
+# ❌ 删除旧的 StorageBasePath
+# StorageBasePath: "/mnt/anime"
 
-# Server configuration
+# ✅ 新增 Mounts (挂载点映射)
+# 变量名 'path' 与前端保持一致，'root' 是本地真实路径
+Mounts:
+  - name: "Media-A"                # 方便看日志 (可选)
+    path: "/Media-A"           # 前端发来的路径前缀 (Emby 里的路径)
+    root: "/mnt/cd2/GoogleDrive/DaoBi/Media-A"    # 后端真实的本地存储路径
+
+  - name: "115_c"
+    path: "/media/115_c"
+    root: "/mnt/cd2/115_c"
+
+  # 这是一个兜底配置，匹配根目录
+  - name: "Default"
+    path: "/"
+    root: "/data/downloads"
+
 Server:
-  port: "60002"  # Port on which the server will listen
+  port: 60002
