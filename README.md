@@ -4,7 +4,7 @@
 
 ## 简介
 
-1. 本项目是实现 Emby 媒体服务播放前后端分离的后端程序，需要与播放分离前端 [PiliPili Playback Frontend](https://github.com/Moxi007/PiliPili_Frontend) 配套使用。
+1. 本项目是实现 Emby 媒体服务播放前后端分离的后端程序，需要与播放分离前端 [Go Playback Frontend](https://github.com/Moxi007/Go_Frontend) 配套使用。
 2. 本程序很大程度上基于 [YASS-Backend](https://github.com/FacMata/YASS-Backend)，并为了提高易用性和极致的传输性能进行了大幅重构和优化。
 
 ------
