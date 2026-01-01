@@ -1,8 +1,8 @@
 package middleware
 
 import (
-	"PiliPili_Backend/config"
-	"PiliPili_Backend/logger"
+	"Go_Backend/config"
+	"Go_Backend/logger"
 	"bytes"
 	"github.com/gin-gonic/gin"
 	"io"
