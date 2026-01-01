@@ -154,7 +154,7 @@ go version
 ##### 2.2 下载代码
 
 ```shell
-git clone [https://github.com/Moxi007/Go_Backend.git](https://github.com/Moxi007/Go_Backend.git) /data/emby_backend
+git clone https://github.com/Moxi007/Go_Backend.git /data/emby_backend
 cd /data/emby_backend
 ```
 
@@ -167,15 +167,15 @@ vi config.yaml
 
 ```shell
 # -s -w 参数用于去除调试符号，减小体积
-go build -ldflags="-s -w" -o pilipili_backend main.go
+go build -ldflags="-s -w" -o go_backend main.go
 ```
 
 ##### 2.4 运行程序
 
 ```shell
 # 前台运行测试
-./pilipili_backend config.yaml
+./go_backend config.yaml
 
 # 后台运行 (使用 nohup)
-nohup ./pilipili_backend config.yaml > streamer.log 2>&1 &
+nohup ./go_backend config.yaml > streamer.log 2>&1 &
 ```
