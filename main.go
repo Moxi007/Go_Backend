@@ -1,10 +1,10 @@
 package main
 
 import (
-	"PiliPili_Backend/config" // Import config package
+	"PiliPili_Backend/config"
 	"PiliPili_Backend/logger"
-	"PiliPili_Backend/middleware" // Import middleware package
-	"PiliPili_Backend/streamer"   // Import streamer package
+	"PiliPili_Backend/middleware"
+	"PiliPili_Backend/streamer"
 	"fmt"
 	"github.com/gin-gonic/gin"
 	"log"
@@ -12,7 +12,6 @@ import (
 	"strconv"
 )
 
-// initializeConfig initializes the configuration from the config file.
 func initializeConfig(configFile string) error {
 	logger.Info("Initializing config...")
 
@@ -24,11 +23,10 @@ func initializeConfig(configFile string) error {
 
 	logger.Info("Configuration initialized successfully")
 
-	// LogLevel is now part of the config package
+	// 使用 config.GetConfig() (返回指针)
 	loglevel := config.GetConfig().LogLevel
 	logger.InitializeLogger(loglevel)
 
-	// Initialize the Signature instance
 	encipher := config.GetConfig().Encipher
 	if err := streamer.InitializeSignature(encipher); err != nil {
 		logger.Error("Failed to initialize Signature", "error", err)
@@ -39,20 +37,19 @@ func initializeConfig(configFile string) error {
 	return nil
 }
 
-// initializeGinEngine initializes the Gin engine with the necessary middlewares and routes.
 func initializeGinEngine() *gin.Engine {
 	logger.Info("Initializing Gin engine...")
 
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.Default()
 	r.Use(middleware.CorsMiddleware())
+	// 注册路由
 	r.GET("/stream", streamer.Remote)
 
 	logger.Info("Gin engine initialized successfully")
 	return r
 }
 
-// startServer starts the Gin server on the configured port.
 func startServer(r *gin.Engine) error {
 	logger.Info("Starting the server...")
 
@@ -66,11 +63,10 @@ func startServer(r *gin.Engine) error {
 		return err
 	}
 
-	logger.Info("Server started successfully on port", port)
+	logger.Info("Server started successfully on port %d", port)
 	return nil
 }
 
-// handleRequest processes the entire request handling flow.
 func handleRequest(configFile string) error {
 	logger.SetDefaultLogger()
 	logger.Info("\n-----------------------------------------------\n")
@@ -84,8 +80,6 @@ func handleRequest(configFile string) error {
 		return err
 	}
 
-	logger.Info("Request handling completed successfully.")
-	logger.Info("\n-----------------------------------------------\n")
 	return nil
 }
 
