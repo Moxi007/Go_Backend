@@ -57,7 +57,7 @@
 ## 配置文件
 
 ```yaml
-# Configuration for PiliPili Backend
+# Configuration for Go Backend
 
 # LogLevel defines the level of logging (e.g., INFO, DEBUG, ERROR)
 LogLevel: "INFO"
