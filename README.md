@@ -139,7 +139,7 @@ docker-compose pull && docker-compose up -d
 
 ```shell
 # 1. 下载 Go (请根据最新版本调整 URL)
-wget -q -O /tmp/go.tar.gz [https://go.dev/dl/go1.23.5.linux-amd64.tar.gz](https://go.dev/dl/go1.23.5.linux-amd64.tar.gz) 
+wget -q -O /tmp/go.tar.gz https://go.dev/dl/go1.23.5.linux-amd64.tar.gz
 
 # 2. 解压安装
 rm -rf /usr/local/go && tar -C /usr/local -xzf /tmp/go.tar.gz && rm /tmp/go.tar.gz
