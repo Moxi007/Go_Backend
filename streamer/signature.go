@@ -1,123 +1,90 @@
-// Package streamer Package stream provides AES-128 CBC encryption and decryption with consistent results.
 package streamer
 
 import (
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/base64"
-	"encoding/json"
-	"errors"
-	"sync"
+	"Go_Backend/config"
+	"Go_Backend/logger"
+	"context" // 新增
+	"net/http"
+	"os"
+	"path/filepath"
+	"sync" // 新增
+
+	"github.com/gin-gonic/gin"
 )
 
-var (
-	signatureInstance *Signature
-	once              sync.Once
-)
+// getLocalPath 并发版：同时搜索所有挂载点，返回最快找到的那个
+func getLocalPath(relativePath string) string {
+	cleanRelPath := filepath.Clean(relativePath)
+	cfg := config.GlobalConfig
+	if cfg == nil || len(cfg.Mounts) == 0 {
+		return ""
+	}
 
-// Signature provides methods for signing and verifying data using HMAC-SHA256.
-type Signature struct {
-	key []byte
+	// 1. 创建通道接收结果 (Buffer设为1即可，因为我们只要第1个结果)
+	resultCh := make(chan string, 1)
+	
+	// 2. 创建 WaitGroup 等待所有协程结束
+	var wg sync.WaitGroup
+	
+	// 3. 创建 Context 用于取消操作 (一旦找到，通知其他人不用找了)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel() // 确保退出时释放资源
+
+	// 4. 并发启动搜索任务
+	for i := range cfg.Mounts {
+		wg.Add(1)
+		
+		// ⚠️ 注意：将 mount 变量作为参数传递给协程，防止闭包捕获问题
+		go func(m config.Mount) {
+			defer wg.Done()
+
+			// 优化：如果已经有人找到了，我就不费劲去 Stat 了
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+
+			fullPath := filepath.Join(m.Root, cleanRelPath)
+
+			// 执行耗时的 IO 操作 (os.Stat)
+			if _, err := os.Stat(fullPath); err == nil {
+				// 找到了！
+				select {
+				case resultCh <- fullPath: // 尝试把结果发出去
+					logger.Info("File found (Concurrent)", "backend", m.Name, "path", fullPath)
+					cancel() // 广播：找到了，大家可以停了！
+				case <-ctx.Done(): // 如果发不出去，说明已经有人先发了
+				}
+			}
+		}(cfg.Mounts[i])
+	}
+
+	// 5. 启动一个守护协程，等所有人都干完活(或都失败)后关闭通道
+	go func() {
+		wg.Wait()
+		close(resultCh)
+	}()
+
+	// 6. 等待结果
+	// 如果找到文件，resultCh 会吐出路径
+	// 如果所有盘都找不到，resultCh 会被 close，返回空字符串
+	return <-resultCh
 }
 
-// InitializeSignature initializes the global Signature instance with the provided AES key.
-// The key length must be 16 bytes for AES-128.
-func InitializeSignature(encipher string) error {
-	var initError error
-	once.Do(func() {
-		key := []byte(encipher)
-		if len(key) != 16 {
-			initError = errors.New("AES key must be 16 bytes long for AES-128")
-			return
-		}
-		signatureInstance = &Signature{key: key}
-	})
-	return initError
-}
-
-// GetSignatureInstance returns the global Signature instance.
-func GetSignatureInstance() (*Signature, error) {
-	if signatureInstance == nil {
-		return nil, errors.New("signature instance is not initialized")
-	}
-	return signatureInstance, nil
-}
-
-// Encrypt deterministically generates a signature for the given itemId, mediaId and expireAt using HMAC-SHA256.
-// Returns a base64-encoded ciphertext string.
-func (s *Signature) Encrypt(itemId, mediaId string, expireAt int64) (string, error) {
-	// Create a map with the input data
-	data := map[string]interface{}{
-		"itemId":   itemId,
-		"mediaId":  mediaId,
-		"expireAt": expireAt,
+// ServeFile 保持不变 (引用上面的 getLocalPath 即可)
+func ServeFile(c *gin.Context, relativePath string) {
+	localAbsPath := getLocalPath(relativePath)
+	
+	if localAbsPath == "" {
+		logger.Error("File not found in any mount point", "path", relativePath)
+		c.String(http.StatusNotFound, "File not found")
+		return
 	}
 
-	// Serialize the data to JSON
-	jsonData, err := json.Marshal(data)
-	if err != nil {
-		return "", err
-	}
-
-	// Generate HMAC-SHA256 signature
-	h := hmac.New(sha256.New, s.key)
-	h.Write(jsonData)
-	signature := h.Sum(nil)
-
-	// Combine the JSON data and signature
-	payload := map[string]string{
-		"data":      base64.StdEncoding.EncodeToString(jsonData),
-		"signature": base64.StdEncoding.EncodeToString(signature),
-	}
-
-	// Serialize the payload to JSON
-	payloadJson, err := json.Marshal(payload)
-	if err != nil {
-		return "", err
-	}
-
-	// Return the base64-encoded payload
-	return base64.StdEncoding.EncodeToString(payloadJson), nil
-}
-
-// Decrypt verifies the provided base64-encoded signature using HMAC-SHA256.
-// Returns the original data as a map if the signature is valid.
-func (s *Signature) Decrypt(ciphertext string) (map[string]interface{}, error) {
-	// Decode the base64-encoded payload
-	payloadJson, err := base64.StdEncoding.DecodeString(ciphertext)
-	if err != nil {
-		return nil, err
-	}
-
-	// Parse the JSON payload
-	var payload map[string]string
-	if err := json.Unmarshal(payloadJson, &payload); err != nil {
-		return nil, err
-	}
-
-	// Decode the data and signature
-	jsonData, err := base64.StdEncoding.DecodeString(payload["data"])
-	if err != nil {
-		return nil, err
-	}
-	signature, err := base64.StdEncoding.DecodeString(payload["signature"])
-	if err != nil {
-		return nil, err
-	}
-
-	// Verify the HMAC-SHA256 signature
-	h := hmac.New(sha256.New, s.key)
-	h.Write(jsonData)
-	computedSignature := h.Sum(nil)
-	if !hmac.Equal(signature, computedSignature) {
-		return nil, errors.New("signature verification failed")
-	}
-
-	// Parse the original data
-	var data map[string]interface{}
-	if err := json.Unmarshal(jsonData, &data); err != nil {
-		return nil, err
-	}
-
-	return data, nil
+	// 缓存控制
+	c.Header("Cache-Control", "public, max-age=31536000, immutable")
+	
+	// 零拷贝传输
+	http.ServeFile(c.Writer, c.Request, localAbsPath)
 }
